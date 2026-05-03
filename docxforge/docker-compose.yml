@@ -1,0 +1,54 @@
+version: "3.9"
+
+services:
+  # ── Redis ────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ── API Server ───────────────────────────────────────────────────────────
+  api:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DOCXFORGE_API_KEYS=dev-key-1,dev-key-2
+      - RATE_LIMIT_MAX=100
+      - RATE_LIMIT_WINDOW=1 minute
+      - RESULT_TTL_SECONDS=3600
+      - LOG_LEVEL=info
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Background Worker ───────────────────────────────────────────────────
+  worker:
+    build: .
+    command: ["node", "src/queue/worker.js"]
+    environment:
+      - NODE_ENV=production
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - WORKER_CONCURRENCY=5
+      - RESULT_TTL_SECONDS=3600
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  redis-data:
